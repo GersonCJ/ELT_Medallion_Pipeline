@@ -33,4 +33,7 @@ CREATE SCHEMA IF NOT EXISTS co2_project;
 
 SET default_table_access_method = heap;
 
+-- Create database Airflow
+CREATE DATABASE airflow;
+
 
