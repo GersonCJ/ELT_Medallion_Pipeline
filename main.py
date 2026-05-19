@@ -31,7 +31,7 @@ def clean_gx_metadata():
 
 def main():
 
-    clean_gx_metadata()
+    # clean_gx_metadata()
 
     # Path and requirements
 
