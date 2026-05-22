@@ -5,22 +5,28 @@ x-airflow-common:
     - ${ENV_FILE_PATH:-.env}
   environment:
     &airflow-common-env
-    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@postgres-db/${AIRFLOW_DB}
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@postgres-db/${AIRFLOW_DB}
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
-    # AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-airflow_jwt_secret}
     AIRFLOW__API_AUTH__JWT_ISSUER: ${AIRFLOW__API_AUTH__JWT_ISSUER:-airflow}
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags:z
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs:z
+    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config:z
+    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins:z
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
+    redis:
+      condition: service_healthy
     postgres-db:
       condition: service_healthy
   networks:
@@ -62,6 +68,63 @@ services:
     networks:
       - private_network
       - front_network
+
+  redis:
+    image: redis:7.2-bookworm
+    expose:
+      - 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 50
+      start_period: 30s
+    restart: always
+    networks: *airflow-networks
+
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    restart: always
+    environment:
+      MB_DB_FILE: /metabase-data/metabase
+    volumes:
+      - ./frontend/metabase_data:/metabase-data
+    ports:
+      - "3000:3000"
+    networks:
+      - front_network
+
+  web-service:
+    image: nginx:alpine
+    container_name: static_gx
+    volumes:
+      - gx_docs:/usr/share/nginx/html:ro
+    ports:
+      - "8080:80"
+
+  elt-transformation:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
+    container_name: dbt
+    working_dir: /usr/app/dbt_project
+    entrypoint: /bin/sh -c "sleep infinity"
+    env_file: .env
+    volumes:
+      - ./elt_dbt:/usr/app/dbt_project
+      - ./profiles:/root/.dbt
+    depends_on:
+      - postgres-db
+    networks:
+      - private_network
+
+  dbt-docs:
+    image: nginx:alpine
+    container_name: static_dbt
+    volumes:
+      - ./elt_dbt/target:/usr/share/nginx/html:ro
+    ports:
+      - "8181:80"
 
   airflow-init:
     <<: *airflow-common
@@ -152,6 +215,26 @@ services:
       _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
     user: "0:0"  
 
+# ----------------- Airflow Services
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports: 
+      - "8081:8080"
+    restart: always
+    healthcheck:
+      # We check 8080 because that is the internal port inside the container
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/v2/monitor/health').getcode()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+    networks: *airflow-networks
+
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
@@ -168,22 +251,60 @@ services:
         condition: service_completed_successfully
     networks: *airflow-networks
 
-  airflow-webserver:
+  airflow-dag-processor:
     <<: *airflow-common
-    command: api-server
-    ports: 
-      - "8081:8080"
+    command: dag-processor
     healthcheck:
-      # We check 8080 because that is the internal port inside the container
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').getcode()"]
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 30s
+    restart: always
     depends_on:
+      <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
     networks: *airflow-networks
 
+  airflow-worker:
+    <<: *airflow-common
+    command: celery worker
+    healthcheck:
+      # yamllint disable rule:line-length
+      test: ["CMD-SHELL", 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}" || celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    environment:
+      <<: *airflow-common-env
+      DUMB_INIT_SETSID: "0"
+      AIRFLOW__LOGGING__WORKER_LOG_SERVER_HOST: "airflow-worker"
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-apiserver:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    networks: *airflow-networks
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+    networks: *airflow-networks
 
   airflow-cli:
     <<: *airflow-common
@@ -192,7 +313,6 @@ services:
     environment:
       <<: *airflow-common-env
       CONNECTION_CHECK_MAX_COUNT: "0"
-    # Workaround for entrypoint issue. See: https://github.com/apache/airflow/issues/16252
     command:
       - bash
       - -c
@@ -203,48 +323,24 @@ services:
         condition: service_completed_successfully
     networks: *airflow-networks
 
-  metabase:
-    image: metabase/metabase:latest
-    container_name: metabase
+  flower:
+    <<: *airflow-common
+    command: celery flower
+    profiles:
+      - flower
+    ports:
+      - "5555:5555"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5555/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     restart: always
-    environment:
-      MB_DB_FILE: /metabase-data/metabase
-    volumes:
-      - ./frontend/metabase_data:/metabase-data
-    ports:
-      - "3000:3000"
-    networks:
-      - front_network
-
-  web-service:
-    image: nginx:alpine
-    container_name: static_gx
-    volumes:
-      - gx_docs:/usr/share/nginx/html:ro
-    ports:
-      - "8080:80"
-
-  elt-transformation:
-    image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
-    container_name: dbt
-    working_dir: /usr/app/dbt_project
-    entrypoint: /bin/sh -c "sleep infinity"
-    env_file: .env
-    volumes:
-      - ./elt_dbt:/usr/app/dbt_project
-      - ./profiles:/root/.dbt
     depends_on:
-      - postgres-db
-    networks:
-      - private_network
-
-  dbt-docs:
-    image: nginx:alpine
-    container_name: static_dbt
-    volumes:
-      - ./elt_dbt/target:/usr/share/nginx/html:ro
-    ports:
-      - "8181:80"
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
     
 volumes:
 
