@@ -1,6 +1,9 @@
 x-airflow-common:
   &airflow-common
-  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.2.1-python3.12}
+  image: customized-airflow
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
   env_file:
     - ${ENV_FILE_PATH:-.env}
   environment:
@@ -11,17 +14,21 @@ x-airflow-common:
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@postgres-db/${AIRFLOW_DB}
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
-    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-airflow_jwt_secret}
     AIRFLOW__API_AUTH__JWT_ISSUER: ${AIRFLOW__API_AUTH__JWT_ISSUER:-airflow}
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-docker"
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags:z
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs:z
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config:z
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins:z
+    - /var/run/docker.sock:/var/run/docker.sock:z
+    - ./data/raw_parquet_lab2:/app/data/raw:z
+    - gx_docs:/app/gx:z
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -42,8 +49,8 @@ services:
     container_name: pipeline_ELT
     command: uv run main.py
     volumes:
-      - ./data/raw_parquet_lab2:/app/data/raw
-      - gx_docs:/app/gx
+      - ./data/raw_parquet_lab2:/app/data/raw:z
+      - gx_docs:/app/gx:z
     depends_on:
       - postgres-db
     networks:
@@ -105,7 +112,9 @@ services:
       - "8080:80"
 
   elt-transformation:
-    image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
+    build:
+      context: .
+      dockerfile: Dockerfile.dbt
     container_name: dbt
     working_dir: /usr/app/dbt_project
     entrypoint: /bin/sh -c "sleep infinity"
@@ -270,6 +279,8 @@ services:
   airflow-worker:
     <<: *airflow-common
     command: celery worker
+    user: "0:0"
+    entrypoint: /bin/bash -c "chown -R 50000:0 /app/gx && su airflow -c '/home/airflow/.local/bin/airflow celery worker'"
     healthcheck:
       # yamllint disable rule:line-length
       test: ["CMD-SHELL", 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}" || celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"']

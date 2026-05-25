@@ -12,3 +12,7 @@ wheels/
 
 # Folders
 logs/
+
+# Files
+dags\example_2_old_operators.py
+dags\tutorial_example.py

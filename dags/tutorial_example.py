@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
         },
         dag_id="hello_world_taskFlow",
         start_date=datetime(2024, 1, 1),
-        schedule="@daily",
+        schedule=None,
         catchup=False,    
 )
 def run_intro():
