@@ -38,7 +38,7 @@ with DAG(
         # 'trigger_rule': 'all_success'
     },
     description="A simple tutorial DAG",
-    schedule=timedelta(days=1),
+    schedule=None,
     start_date=datetime(2021, 1, 1),
     catchup=False,
     tags=["example"],

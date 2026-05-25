@@ -7,7 +7,7 @@ from pathlib import Path
 def run_validation():
 
     # Create the Data context
-    context = gx.get_context(mode="file", project_root_dir="/app/gx")
+    context = gx.get_context(mode="file", project_root_dir="/app")
 
     # Define the Data Source's parameters:
     # This path is relative to the `base_directory` of the Data Context.
@@ -15,23 +15,32 @@ def run_validation():
     data_source_name = "my_filesystem_data_source"
 
     # Create the Data Source:
-    data_source = context.data_sources.add_pandas_filesystem(
+    data_source = context.data_sources.add_or_update_pandas_filesystem(
         name=data_source_name, base_directory=source_folder
     )
         
     # Data Asset's parameters
     asset_name = "co2_raw_data_parquet"
-    file_csv_asset = data_source.add_parquet_asset(name=asset_name)
-
+    try:
+        file_csv_asset = data_source.add_parquet_asset(name=asset_name)
+    except Exception as e:
+        file_csv_asset = data_source.get_asset(name=asset_name)
+        
     # Batch definition
     file_data_asset = context.data_sources.get(data_source_name).get_asset(asset_name)
 
     batch_definition_name = "owid_co2_raw_data.parquet"
-    batch_definition = file_csv_asset.add_batch_definition(name=batch_definition_name)
+    try:
+        batch_definition = file_csv_asset.add_batch_definition(name=batch_definition_name)
+    except Exception as e:
+        batch_definition = file_csv_asset.get_batch_definition(name=batch_definition_name)
 
     # Configure expectation suite to be called over runtime data
     expectation_suite = gx.ExpectationSuite("co2_quality_test")
-    expectation_suite = context.suites.add(expectation_suite)
+    try:
+        expectation_suite = context.suites.add(expectation_suite)
+    except Exception as e:
+        expectation_suite = context.suites.get("co2_quality_test")
 
     # Load data for configuration
     df_to_validate = pd.read_parquet(source_folder / batch_definition_name)
@@ -84,9 +93,12 @@ def run_validation():
         data=batch_definition,
         suite=expectation_suite,
         name="co2_validations"
-    ) 
+    )
 
-    _ = context.validation_definitions.add(validation_definition)
+    try:
+        validation_definition = context.validation_definitions.add(validation_definition)
+    except Exception as e:
+        validation_definition = context.validation_definitions.get("co2_validations")    
 
     action_list = [
         gx.checkpoint.UpdateDataDocsAction(
@@ -102,7 +114,10 @@ def run_validation():
         }
     )
 
-    _ = context.checkpoints.add(checkpoint)
+    try:
+        checkpoint = context.checkpoints.add(checkpoint)
+    except:
+        checkpoint = context.checkpoints.get("co2_checkpoint")
 
     # Run checkpoint to validate if everything runs properly
     runid = gx.RunIdentifier(run_name="co2_data")
