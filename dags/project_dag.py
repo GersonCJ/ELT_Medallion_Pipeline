@@ -89,7 +89,13 @@ def runPipelineELT():
         """
     
 
-    @task.bash(trigger_rule="all_done")
+    @task(trigger_rule="all_done")
+    def dashboard_creation():
+        from gold_metabase import gold
+        gold.metabase_pipeline()
+    
+
+    @task.bash()
     def docs():
         return """
         docker exec dbt sh -c "
@@ -100,7 +106,7 @@ def runPipelineELT():
         echo 'Metabse:          http://localhost:3000/' &&
         echo '========================' 
         """
-    extraction() >> validation() >> load() >> dbt_run() >> dbt_test() >> docs()
+    extraction() >> validation() >> load() >> dbt_run() >> dbt_test() >> dashboard_creation() >> docs()
 
 
 runPipelineELT()
