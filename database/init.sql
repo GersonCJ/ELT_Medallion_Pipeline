@@ -36,4 +36,7 @@ SET default_table_access_method = heap;
 -- Create database Airflow
 CREATE DATABASE airflow;
 
+-- Create database for metabase
+CREATE DATABASE metabase_db;
+
 

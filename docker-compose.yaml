@@ -95,9 +95,17 @@ services:
     container_name: metabase
     restart: always
     environment:
-      MB_DB_FILE: /metabase-data/metabase
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase_db
+      MB_DB_PORT: ${DB_PORT}
+      MB_DB_USER: ${DB_USER}
+      MB_DB_PASS: ${DB_PASSWORD}
+      MB_DB_HOST: ${DB_HOST}
+    depends_on:
+      postgres-db:
+        condition: service_healthy
     volumes:
-      - ./frontend/metabase_data:/metabase-data
+      - metabase_data:/metabase-data
     ports:
       - "3000:3000"
     networks:
@@ -280,10 +288,10 @@ services:
     <<: *airflow-common
     command: celery worker
     user: "0:0"
-    entrypoint: /bin/bash -c "chown -R 50000:0 /app/gx && su airflow -c '/home/airflow/.local/bin/airflow celery worker'"
+    entrypoint: /bin/bash -c "mkdir -p /opt/airflow/logs && chown -R 50000:0 /opt/airflow/logs && chmod -R 775 /opt/airflow/logs && chown -R 50000:0 /app/gx && su airflow -c '/home/airflow/.local/bin/airflow celery worker'"
     healthcheck:
       # yamllint disable rule:line-length
-      test: ["CMD-SHELL", 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}" || celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"']
+      test: ["CMD-SHELL", '/home/airflow/.local/bin/celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}" || /home/airflow/.local/bin/celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"']
       interval: 30s
       timeout: 10s
       retries: 5
@@ -364,6 +372,11 @@ volumes:
     name: "data_sql"
     labels:
       description: "Postgresql persistent data storage"
+
+  metabase_data:
+    name: "metabase_data"
+    labels:
+      description: "Volume to store metabase data"
 
 networks:
   private_network:

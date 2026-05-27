@@ -10,10 +10,16 @@ COPY ./constants /usr/python/lib/python3.12/constants
 
 COPY ./data_quality /usr/python/lib/python3.12/data_quality
 
+COPY ./gold_metabase /usr/python/lib/python3.12/gold_metabase
+
 USER root
 RUN uv pip install -r /opt/airflow/pyproject.toml --python /usr/python/bin/python3.12
 USER airflow
 
 USER root
 RUN mkdir -p /app/gx && chown -R airflow:root /app/gx
+USER airflow
+
+USER root
+RUN mkdir -p /app/gold_metabase && chown -R airflow:root /app/gold_metabase
 USER airflow
