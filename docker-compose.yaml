@@ -43,18 +43,6 @@ x-airflow-common:
 
 
 services:
-  app:
-    image: pipeline_elt
-    build: .
-    container_name: pipeline_ELT
-    command: uv run main.py
-    volumes:
-      - ./data/raw_parquet_lab2:/app/data/raw:z
-      - gx_docs:/app/gx:z
-    depends_on:
-      - postgres-db
-    networks:
-      - private_network
 
   postgres-db:
     image: postgres

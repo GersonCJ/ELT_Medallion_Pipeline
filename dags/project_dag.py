@@ -40,7 +40,7 @@ def runPipelineELT():
         import logging
 
         gx.run_validation()
-        logging.info("Validation concluded ! You can see the results at: http://localhost:8080/gx/uncommitted/data_docs/local_site/")
+        logging.info("Validation concluded !")
 
 
     @task
@@ -103,7 +103,7 @@ def runPipelineELT():
         echo '========================' &&
         echo 'GX docs:          http://localhost:8080/uncommitted/data_docs/local_site/' &&
         echo 'DBT docs:         http://localhost:8181/' &&
-        echo 'Metabse:          http://localhost:3000/' &&
+        echo 'Metabase:          http://localhost:3000/' &&
         echo '========================' 
         """
     extraction() >> validation() >> load() >> dbt_run() >> dbt_test() >> dashboard_creation() >> docs()
