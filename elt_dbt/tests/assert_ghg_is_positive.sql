@@ -1,4 +1,5 @@
--- Buscamos anos ondea emissão foi menor que zero, o que seria um erro de dado.
+-- In this singular test, we search data where the emission was negative, which is not a problem, ... 
+-- since negative net emission means, gas absorption was greater than gas emission.
 
 SELECT
 

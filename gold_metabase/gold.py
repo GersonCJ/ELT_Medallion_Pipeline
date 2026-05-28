@@ -731,7 +731,6 @@ def setup_metabase_dashboards():
         # Publica dashboard
         if api.publish_dashboard(main_dash_id):
             logger.info(f"\nDashboard published successfully!")
-            logger.info(f"  Access on: {METABASE_HOST}/dashboard/{main_dash_id}")
         
         return True
         
