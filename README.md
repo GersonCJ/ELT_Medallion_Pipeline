@@ -1,92 +1,132 @@
-# Lab 02 - Engenharia de Dados e Big Data (Poli-USP)
-## Pipeline de Dados CO2 & PIB: Arquitetura de Medalhão com dbt
+# ELT Medallion Pipeline Project
+## CO2-owid data pipeline: Medallion Architecture with DBT and AIRFLOW
 
-Este repositório contém a solução completa para o Laboratório 02. O projeto implementa um pipeline ELT (Extract, Load, Transform) utilizando **dbt (data build tool)** para a camada de transformação, **Great Expectations** para qualidade de dados e **Metabase** para visualização.
+This project implements a ELT pipeline (Extract, Load, Transform) using **Apache Airflow** for pipeline orchestration **dbt (data build tool)** for the transformation layer, **Great Expectations** for data quality and **Metabase** as Business Intelligence tool.
 
 ---
 
-## Como Reproduzir o Ambiente
+## How to reproduce the environment
 
-Para reproduzir o ambiente de desenvolvimento, siga os passos abaixo utilizando o Docker.
+Follow the steps below, to reproduce the environment:
 
-### 1. Clonar o Repositório
+### 0. Requirements
+
+This project depends on **Docker** functionality so you may need to install **Docker Desktop** - If you don't have it yet please follow this link: 'https://docs.docker.com/desktop/'.
+
+### 1. Clone the repo
 ```bash
-git clone <url-do-seu-repositorio>
-cd <nome-da-pasta-do-projeto>
+git clone git@github.com:GersonCJ/ELT_Medallion_Pipeline.git
+cd ELT_Medallion_Pipeline
+code .
 ```
 
-### 2. Subir os Containers
-A arquitetura é orquestrada via Docker Compose, subindo simultaneamente o Postgres, Metabase, e servidores Nginx para documentação.
+After cloning the repo, make sure to create a new file named **.env** and place the contents of the **.env.example** inside. The project is also dependent on this file.
+
+### 2. Run the Containers
+
+The entire architecture is containerized, meaning that the application and all its dependencies are packed into an isolated, lightweight, and executable unit called a container, and specifically in the case of this project, each element of the application has its own Container running simultaneously and independently. The containerized services include Postgres, Metabase, Nginx server for documentation and Airflow for orchestration. 
+
+To run the Containers, execute the command below: 
 ```bash
 docker-compose up -d --build
 ```
-> **Imagem 1: Container dbt**
-![Container dbt](images/docker_dbt.png)
 
-### 3. Executar o pipeline dbt
-Dentro do container dbt, execute os comandos para processar as camadas Bronze, Silver e Gold:
-```bash
-docker exec -it dbt bash  # Entrar no Container dbt
-dbt deps                  # Instalar dependências (dbt-utils)
-dbt run                   # Executar transformações e criar as tabelas Marts
-dbt test                  # Validar a integridade dos dados
-dbt docs generate         # Gerar a documentação técnica
-```
-> **Imagem 2: Pipeline dbt - dbt run**
-![dbt run](images/dbt_run.png)
+If everything goes right, by the end of the execution, you should have something like the image below:
 
-> **Imagem 3: Pipeline dbt - dbt test**
-![dbt test](images/dbt_test.png)
+> **Image 1: Docker built successfully**
+![Docker built](images/docker_built.png)
 
-> **Imagem 4: Pipeline dbt - dbt docs**
-![dbt docs generate](images/dbt_docs.png)
+### 3. Watch the Airflow orchestration on the Airflow UI
 
+Since the pipeline is orchestrated entirely via the **Apache Airflow**, after the containers finish starting up, you can access the Airflow UI to monitor the execution in real-time, without running any additional commands.
 
-## Arquitetura do Projeto
-O pipeline foi estruturado seguindo as melhores práticas de Engenharia de Dados:
+You can access the UI via the following link: **http://localhost:8081/dags/ELT_DAG**. 
 
-- Camada Bronze: Dados brutos carregados diretamente no Postgres.
+If it is your first access you will probably encounter the screen below:
 
-- Camada Silver: Limpeza de tipos, tratamento de valores nulos e padronização de ISO Codes.
+> **Image 2: Airflow UI - first access**
+![airflow first acess](images/Airflow_UI_first_access.PNG)
 
-- Camada Gold (Marts): Agregações de negócio, incluindo métricas de Emissão Per Capita e Intensidade de Carbono, utilizando Macros reutilizáveis.
+Just enter **username**: *airflow* and **password**: *airflow*
 
-## Documentação e Linhagem (dbt Docs)
-A documentação gerada automaticamente pelo dbt permite auditar o dicionário de dados e entender a origem de cada métrica.
+Once you are in, you should see the screen below:
 
-1. Tela de Documentação
-- Disponível em: http://localhost:8181
+> **Image 3: Airflow UI - ELT_DAG**
+![Airflow UI Dag](images/Airflow_UI_dag.png)
 
-Aqui estão listadas todas as colunas, descrições e testes aplicados aos modelos de dados.
+Now to monitor the execution and access the application logs, you should click the **Runs** button in the left tab. As you can see below:
 
-> **Imagem 5: dbt docs - Localhost:8181**
+> **Image 4: Airflow UI - Runs**
+![Airflow runs](images/Airflow_runs.PNG)
+
+And then select the Dag Run ID available. It should take you to the last execution of the DAG. As you can see below:
+
+> **Image 5: Airflow UI - ELT_DAG execution**
+![DAG execution](images/DAG_execution.PNG)
+
+And by clicking each specific task you can see the application logs for that task. An example below:
+
+> **Image 6: DBT run task Logs**
+![DBT run task logs](images/dbt_task_logs.PNG)
+
+## Project Architecture
+The pipeline was structured following Data Engineering best practices:
+
+- Bronze Layer: Raw data loaded directly into Postgres.
+
+- Silver Layer: Type cleaning, handling of null values, and standardization of ISO Codes.
+
+- Gold Layer (Marts): Business aggregations, including Per Capita Emission and Carbon Intensity metrics, using reusable Macros.
+
+## Documentation and Lineage
+
+As you can probably see, the final Airflow task is called **docs**. There you will find three new links you can follow to see the project's automatically generated documentation. We'll go through each one of them now.
+
+The documentation automatically generated by dbt allows auditing the data dictionary and understanding the origin of each metric.
+
+1. Documentation Screen
+- Available at: http://localhost:8181
+
+Here are listed all the columns, descriptions, and tests applied to the data models.
+
+> **Image 7: dbt docs - Localhost:8181**
 ![docs](images/dbt_docs_localhost.png)
 
-2. Linhagem de Dados (Lineage Graph)
-O gráfico de linhagem visualiza o fluxo dos dados desde as fontes (sources) até às tabelas finais de análise (marts).
+2. Data Lineage (Lineage Graph)
+The lineage graph visualizes the data flow from the sources to the final analysis tables (marts).
 
-> **Imagem 6: Lineage**
+> **Image 8: Lineage**
 ![Lineage](images/dbt_lineage.png)
 
-## Qualidade de Dados (Great Expectations)
-Antes das transformações, os dados passam por uma camada de validação de qualidade (GX) para garantir que o esquema e os tipos de dados estão corretos.
+## Data Quality (Great Expectations)
+Before the transformations, the data passes through a quality validation layer (GX) to ensure that the schema and data types are correct.
 
-- Disponível em: http://localhost:8080
+- Available at: http://localhost:8080
 
-> **Imagem 7: Great Expectations**
+> **Image 9: Great Expectations**
 ![GX](images/gx.png)
 
-## Visualização de Dados (Metabase)
-As tabelas da camada Gold são consumidas pelo Metabase para a criação de dashboards executivos, permitindo a análise da correlação entre o crescimento do PIB e as emissões de gases de efeito estufa.
+## Business Intelligence (Metabase)
+The Gold layer tables are consumed by Metabase for the creation of executive dashboards, allowing the analysis of the correlation between GDP growth and greenhouse gas emissions.
 
-- Disponível em: http://localhost:3000
+- Available at: http://localhost:3000
 
-> **Imagem 8: Dashboard metabase**
+The Dashboard on the Metabase Application is automatically created via code. When you first enter, you will need to inform **username**: *admin@ELT.com.br* and **password**: *metabase01*. As you can see below:
+
+> **Image 10: Metabase Sign in screen**
+![Metabase_signin](images/metabase_sign_in.PNG)
+
+Then you should land on the metabase home page:
+
+> **Image 11: Metabase Homepage**
+![Metabase_signin](images/Metabse_home.PNG)
+
+You'll find the dashboard under **Our analytics** -> **Business Intelligence**
+
+> **Image 12: Dashboard metabase**
 ![metabase](images/Metabase.png)
 
-## Conclusão e Testes Singulares
-O projeto inclui testes singulares (SQL customizado) para identificar anomalias, como o caso das emissões negativas identificadas nos dados históricos de Angola, garantindo a fiabilidade dos insights gerados.
+## Conclusion and Singular Tests
+The project includes singular tests (custom SQL) to identify anomalies, such as the case of negative emissions identified in Angola's historical data, ensuring the reliability of the generated insights.
 
-**Desenvolvido por:** Gerson Chadi Junior
-**Instituição:** Escola Politécnica da USP (Poli-USP)
-**Disciplina:** Engenharia de Dados e Big Data
+**Developed by:** Gerson Chadi Junior
